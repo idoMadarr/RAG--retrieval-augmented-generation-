@@ -20,7 +20,7 @@ client = OpenAI(api_key=os.getenv("OPEN_AI_KEY"))
 @app.post('/upload_pdf')
 async def upload_pdf(body: dict):
     pdf_path = body.get("pdf_path", None)
-    source_id = body.get("source_id", None)
+    source_id = os.path.basename(pdf_path)
 
     if not pdf_path or not source_id:
         raise HTTPException(status_code=400, detail=f"Invalid request body")
