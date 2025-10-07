@@ -1,119 +1,97 @@
 import logging
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from dotenv import load_dotenv
-
-import inngest
-import inngest.fast_api
-from inngest.fast_api import serve
-from inngest.experimental import ai
+from openai import OpenAI
 
 from data_loader import load_and_chunk, embed_texts
-from rag_types import RAGQueryResult, RAGSearchResult, RAGUpsertResult, RAGChunkAndSrc
+from rag_types import RAGQueryResult, RAGSearchResult, RAGUpsertResult
 
 import uuid
 import os
-import datetime
 
 from vector_db import QdrantStorage
 
 load_dotenv()
-
-inngest_client = inngest.Inngest(
-    app_id="rag",
-    logger=logging.getLogger("uvicorn"),
-    is_production=False,
-    serializer=inngest.PydanticSerializer()
-)
-
-@inngest_client.create_function(
-    fn_id="RAG: Ingest PDF",
-    trigger=inngest.TriggerEvent(event="rag/ingest_pdf")
-)
-async def rag_ingest_pdf(context: inngest.Context):
-    # Step 1 - load pdf data
-    def _load(ctx: inngest.Context) -> RAGChunkAndSrc:
-        pdf_path = ctx.event.data["pdf_path"]
-        source_id = ctx.event.data.get("source_id", pdf_path)
-        chunks = load_and_chunk(pdf_path)
-        return RAGChunkAndSrc(chunks=chunks, source_id=source_id)
-
-
-    # Step 2 - embed and store
-    def _upsert(chunks_and_src: RAGChunkAndSrc) -> RAGUpsertResult:
-        chunks = chunks_and_src.chunks
-        source_id = chunks_and_src.source_id
-
-        # Filter out empty chunks
-        filtered_chunks = [c for c in chunks if c.strip() != ""]
-
-        vectors = embed_texts(filtered_chunks)
-        ids = [str(uuid.uuid5(uuid.NAMESPACE_URL, f"{source_id}:{i}")) for i in range(len(filtered_chunks))]
-        payloads = [{"source": source_id, "text": chunks[i]} for i in range(len(filtered_chunks))]
-
-        QdrantStorage().upsert(ids, vectors, payloads)
-        return RAGUpsertResult(ingested=len(filtered_chunks))
-
-    chunks_and_src = await context.step.run("load-and-chunk", lambda: _load(context), output_type=RAGChunkAndSrc)
-    ingested = await context.step.run("embed-and-upsert", lambda: _upsert(chunks_and_src), output_type=RAGUpsertResult)
-    return ingested.model_dump()
-
-
-@inngest_client.create_function(
-    fn_id="RAG: Query PDF",
-    trigger=inngest.TriggerEvent(event="rag/query_pdf")
-)
-async def rag_query_pdf(context: inngest.Context):
-    def _search(question: str, top_k: int = 5)  -> RAGSearchResult:
-        query_vector = embed_texts([question])[0]
-        store = QdrantStorage()
-        result = store.search(query_vector, top_k)
-        return RAGSearchResult(contexts=result["contexts"], sources=result["sources"])
-
-    question = context.event.data["question"]
-    top_k = int(context.event.data.get("top_k", 5))
-
-    found = await context.step.run("embed-and-search", lambda: _search(question, top_k), output_type=RAGSearchResult)
-
-    context_block = "\n\n".join(f"- {c}" for c in found.contexts)
-    user_content = (
-        "Use the following context to answer the following questions:\n\n"
-        f"Context: {context_block}\n\n"
-        f"Question: {question}\n\n"
-        "Answer concisely using the context above."
-    )
-
-    adapter = ai.openai.Adapter(
-        auth_key=os.getenv("OPEN_AI_KEY"),
-        model="gpt-4o-mini"
-    )
-
-    response = await  context.step.ai.infer(
-        "llm-answer",
-        adapter=adapter,
-        body={
-            "max_tokens": 1024,
-            "temperature": 0.2,
-            "messages": [
-                { "role": "system", "content": "You answer questions using only the provided context" },
-                { "role": "user", "content": user_content }
-            ]
-        }
-    )
-
-    answer = response["choices"][0]["message"]["content"].strip()
-    return { "answer": answer, "sources": found.sources, "num_contexts": len(found.contexts) }
-
-
 app = FastAPI()
 
-# # Simple GET endpoint for testing
-# @app.get("/")
-# def read_root():
-#     return {"message": "Hello, FastAPI is working!"}
-#
-# # Another test endpoint with parameter
-# @app.get("/hello/{name}")
-# def say_hello(name: str):
-#     return {"message": f"Hello, {name}!"}
+logger = logging.getLogger("uvicorn")
+client = OpenAI(api_key=os.getenv("OPEN_AI_KEY"))
 
-serve(app, inngest_client, [rag_ingest_pdf, rag_query_pdf])
+@app.post('/upload_pdf')
+async def upload_pdf(body: dict):
+    pdf_path = body.get("pdf_path", None)
+    source_id = body.get("source_id", None)
+
+    if not pdf_path or not source_id:
+        raise HTTPException(status_code=400, detail=f"Invalid request body")
+
+    # Load & Chunk
+    logger.info(f"Loading and Chunking PDF: {pdf_path}")
+    chunks = load_and_chunk(pdf_path)
+    chunks = [c for c in chunks if c.strip()]
+    if not chunks:
+        raise HTTPException(status_code=400, detail="No text chunks extracted from PDF.")
+
+    # Embed & Upsert
+    vectors = embed_texts(chunks)
+
+    # Creating ID per chunk → required for the database
+    ids = [str(uuid.uuid5(uuid.NAMESPACE_URL, f"{source_id}:{i}")) for i in range(len(chunks))]
+    # [ "f47ac10b-58cc-4372-a567-0e02b2c3d479", "a4c9b8f7-3e45-4f5c-91ef-79b6b9f7c77f", ... ]
+
+    payloads = [{"source": source_id, "text": chunks[i]} for i in range(len(chunks))]
+    # [ {"source": "my-pdf", "text": "Chunk one text"}, {"source": "my-pdf", "text": "Chunk two text"}, ... ]
+
+    QdrantStorage().upsert(ids, vectors, payloads)
+
+    result = RAGUpsertResult(ingested=len(chunks))
+    return result.model_dump()
+
+
+@app.post("/query-pdf")
+async def query_pdf(body: dict):
+    question = body.get("question")
+    top_k = int(body.get("top_k", 5))
+
+    if not question:
+        raise HTTPException(status_code=400, detail="Missing 'question' in request body.")
+
+    logger.info(f"Embedding and searching for question: {question}")
+
+    # Step 1 — embed and search
+    query_vector = embed_texts([question])[0]
+    # after we embed the question, we take the first element in the embed data (for longer questions it can be a bit problematic, but it depends on the embedding model)
+
+    result = QdrantStorage().search(query_vector, top_k)
+    found = RAGSearchResult(contexts=result["contexts"], sources=result["sources"])
+
+    if not found.contexts:
+        return {"answer": "No relevant context found.", "sources": [], "num_contexts": 0}
+
+    # Step 2 — create LLM prompt
+    context_block = "\n\n".join(f"- {c}" for c in found.contexts)
+    user_prompt = (
+        "Use the following context to answer the question:\n\n"
+        f"Context:\n{context_block}\n\n"
+        f"Question: {question}\n\n"
+        "Answer concisely using only the context above."
+    )
+
+    logger.info("Calling OpenAI GPT model for answer generation...")
+
+    # Step 3 — generate answer
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You answer questions using only the provided context."},
+            {"role": "user", "content": user_prompt}
+        ],
+        temperature=0.2,
+        max_tokens=1024,
+    )
+
+    answer = response.choices[0].message.content.strip()
+    result = RAGQueryResult(answer=answer, sources=found.sources, num_contexts=len(found.contexts))
+
+    return result.model_dump() # model_dump() Convert pydantic object into a plain python dictionary
+

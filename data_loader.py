@@ -24,7 +24,7 @@ def load_and_chunk(path: str):
 
 
 def embed_texts(texts: list[str]) -> list[list[float]]:
-    # Remove empty / whitespace-only strings
+    # Remove empty / whitespace-only strings - Avoiding useless or blank data to the embedding model
     cleaned_texts = [t for t in texts if t and t.strip()]
 
     if not cleaned_texts:
@@ -34,4 +34,16 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
         model=EMBED_MODEL,
         input=cleaned_texts
     )
+    # response.data:
+    # [
+    #     {"embedding": [0.0123, -0.0456, 0.9876, ...]},
+    #     {"embedding": [0.0021, -0.0123, 0.6543, ...]},
+    #      ...
+    # ]
+
     return [item.embedding for item in response.data]
+    # return
+    # [
+    #   [0.0123, -0.0456, 0.9876, ...],
+    #   [0.0021, -0.0123, 0.6543, ...]
+    # ]

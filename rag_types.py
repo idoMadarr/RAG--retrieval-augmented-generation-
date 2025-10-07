@@ -1,9 +1,5 @@
 import pydantic
 
-class RAGChunkAndSrc(pydantic.BaseModel):
-    chunks: list[str]
-    source_id: str = None
-
 
 class RAGUpsertResult(pydantic.BaseModel):
     ingested: int
