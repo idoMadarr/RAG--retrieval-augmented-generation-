@@ -19,6 +19,7 @@ logger = logging.getLogger("uvicorn")
 LOCAL_RAG = os.getenv("LOCAL_RAG", "False").lower() == "true"
 
 if LOCAL_RAG:
+    # Default port for Ollama - 11434/v1
     client = OpenAI(api_key=os.getenv("OPEN_AI_KEY"), base_url="http://localhost:11434/v1")
 else:
     client = OpenAI(api_key=os.getenv("OPEN_AI_KEY"))
@@ -37,7 +38,7 @@ async def upload_pdf(body: dict):
     chunks = load_and_chunk(file_path)
     chunks = [c for c in chunks if c.strip()]
     if not chunks:
-        raise HTTPException(status_code=400, detail="No text chunks extracted from PDF.")
+        raise HTTPException(status_code=400, detail="Contain no text chunks.")
 
     # Embed & Upsert
     vectors = embed_texts(chunks)

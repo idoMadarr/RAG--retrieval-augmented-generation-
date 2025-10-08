@@ -1,9 +1,13 @@
+import os
+
+import dotenv
 import streamlit as st
 import requests
 import re
 
+dotenv.load_dotenv()
 
-API_URL = "http://127.0.0.1:8000"  # your FastAPI server
+API_URL = os.getenv("SERVER")
 
 st.set_page_config(page_title="RAG System", layout="wide")
 
@@ -31,7 +35,7 @@ if "uploaded_files" not in st.session_state:
 
 # --- Upload section ---
 st.header("📤 Upload PDF or Doc file")
-uploaded_file = st.file_uploader("Choose a file", type=["pdf", "doc", "docx"])
+uploaded_file = st.file_uploader("Choose a file", type=["pdf", "doc", "docx", "xlsx", "xls"])
 
 if st.button("Upload"):
     if uploaded_file:
