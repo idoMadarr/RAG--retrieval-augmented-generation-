@@ -7,9 +7,13 @@ from  dotenv import load_dotenv
 
 load_dotenv()
 
-client = OpenAI(api_key=os.getenv("OPEN_AI_KEY"))
-EMBED_MODEL = "text-embedding-3-large"
-EMBED_DIM = 3072
+LOCAL_RAG = os.getenv("LOCAL_RAG", "False").lower() == "true"
+
+if LOCAL_RAG:
+    client = OpenAI(api_key=os.getenv("OPEN_AI_KEY"), base_url="http://localhost:11434/v1")
+else:
+    client = OpenAI(api_key=os.getenv("OPEN_AI_KEY"))
+
 
 splitter = SentenceSplitter(chunk_size=1000, chunk_overlap=200)
 
@@ -39,7 +43,7 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
         raise ValueError("No valid text chunks provided for embedding")
 
     response = client.embeddings.create(
-        model=EMBED_MODEL,
+        model=os.getenv("EMBED_MODEL"),
         input=cleaned_texts
     )
     # response.data:

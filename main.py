@@ -15,7 +15,14 @@ load_dotenv()
 app = FastAPI()
 
 logger = logging.getLogger("uvicorn")
-client = OpenAI(api_key=os.getenv("OPEN_AI_KEY"))
+
+LOCAL_RAG = os.getenv("LOCAL_RAG", "False").lower() == "true"
+
+if LOCAL_RAG:
+    client = OpenAI(api_key=os.getenv("OPEN_AI_KEY"), base_url="http://localhost:11434/v1")
+else:
+    client = OpenAI(api_key=os.getenv("OPEN_AI_KEY"))
+
 
 @app.post('/upload_file')
 async def upload_pdf(body: dict):
@@ -79,14 +86,13 @@ async def query_pdf(body: dict):
         "Use the following context to answer the question:\n\n"
         f"Context:\n{context_block}\n\n"
         f"Question: {question}\n\n"
-        "Answer concisely using only the context above."
     )
 
     logger.info("Calling OpenAI GPT model for answer generation...")
 
     # Step 3 — generate answer
     response = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model=os.getenv("LLM"),
         messages=[
             {"role": "system", "content": "You answer questions using only the provided context."},
             {"role": "user", "content": user_prompt}

@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
 import re
-import os
+
 
 API_URL = "http://127.0.0.1:8000"  # your FastAPI server
 
@@ -39,10 +39,11 @@ if st.button("Upload"):
         with open(temp_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
 
-        response = requests.post(
-            f"{API_URL}/upload_file",
-            json={"file_path": temp_path, "source_id": uploaded_file.name}
-        )
+        with st.spinner("Uploading..."):
+            response = requests.post(
+                f"{API_URL}/upload_file",
+                json={"file_path": temp_path, "source_id": uploaded_file.name}
+            )
 
         if response.status_code == 200:
             result = response.json()
@@ -69,19 +70,18 @@ if st.session_state.uploaded_files:
         if not question.strip():
             st.error("Please enter a question.")
         else:
-            print(selected_file)
-            pass
-            response = requests.post(
-                f"{API_URL}/query-pdf",
-                json={"question": question, "top_k": top_k, "source_id": selected_file}
-            )
+            with st.spinner(text="Fetching results..."):
+                response = requests.post(
+                    f"{API_URL}/query-pdf",
+                    json={"question": question, "top_k": top_k, "source_id": selected_file}
+                )
+
 
             if response.status_code == 200:
                 data = response.json()
                 st.subheader("🧠 Answer")
                 answer_class = "rtl" if is_hebrew(data["answer"]) else "ltr"
                 st.markdown(f"<div class='{answer_class}'>{data['answer']}</div>", unsafe_allow_html=True)
-
                 st.subheader("📄 Sources")
                 for src in data.get("sources", []):
                     src_class = "rtl" if is_hebrew(src) else "ltr"
