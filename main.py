@@ -17,17 +17,17 @@ app = FastAPI()
 logger = logging.getLogger("uvicorn")
 client = OpenAI(api_key=os.getenv("OPEN_AI_KEY"))
 
-@app.post('/upload_pdf')
+@app.post('/upload_file')
 async def upload_pdf(body: dict):
-    pdf_path = body.get("pdf_path", None)
+    file_path = body.get("file_path", None)
     source_id = body.get("source_id", None)
 
-    if not pdf_path or not source_id:
+    if not file_path or not source_id:
         raise HTTPException(status_code=400, detail=f"Invalid request body")
 
     # Load & Chunk
-    logger.info(f"Loading and Chunking PDF: {pdf_path}")
-    chunks = load_and_chunk(pdf_path)
+    logger.info(f"Loading and Chunking PDF: {file_path}")
+    chunks = load_and_chunk(file_path)
     chunks = [c for c in chunks if c.strip()]
     if not chunks:
         raise HTTPException(status_code=400, detail="No text chunks extracted from PDF.")
@@ -47,7 +47,7 @@ async def upload_pdf(body: dict):
     result = RAGUpsertResult(ingested=len(chunks))
 
     # Remove the file from the server after upsert
-    os.remove(pdf_path)
+    os.remove(file_path)
 
     return result.model_dump()
 
@@ -99,4 +99,3 @@ async def query_pdf(body: dict):
     result = RAGQueryResult(answer=answer, sources=found.sources, num_contexts=len(found.contexts))
 
     return result.model_dump() # model_dump() Convert pydantic object into a plain python dictionary
-

@@ -29,37 +29,37 @@ st.text("Upload multiple PDFs and ask questions based on their content.")
 if "uploaded_files" not in st.session_state:
     st.session_state.uploaded_files = []
 
-# --- Upload PDF section ---
-st.header("📤 Upload PDF")
-uploaded_file = st.file_uploader("Choose a PDF file", type="pdf")
+# --- Upload section ---
+st.header("📤 Upload PDF or Doc file")
+uploaded_file = st.file_uploader("Choose a file", type=["pdf", "doc", "docx"])
 
-if st.button("Upload PDF"):
+if st.button("Upload"):
     if uploaded_file:
         temp_path = f"temp_{uploaded_file.name}"
         with open(temp_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
 
         response = requests.post(
-            f"{API_URL}/upload_pdf",
-            json={"pdf_path": temp_path, "source_id": uploaded_file.name}
+            f"{API_URL}/upload_file",
+            json={"file_path": temp_path, "source_id": uploaded_file.name}
         )
 
         if response.status_code == 200:
             result = response.json()
-            st.success(f"✅ PDF uploaded and indexed! Chunks ingested: {result.get('ingested', '?')}")
+            st.success(f"✅ File uploaded and indexed! Chunks ingested: {result.get('ingested', '?')}")
             if uploaded_file.name not in st.session_state.uploaded_files:
                 st.session_state.uploaded_files.append(uploaded_file.name)
         else:
             st.error(f"Error uploading: {response.text}")
     else:
-        st.warning("Please choose a PDF file first.")
+        st.warning("Please choose a file first.")
 
 # --- Ask a Question section ---
 st.header("💬 Ask a Question")
 
 if st.session_state.uploaded_files:
-    selected_file = st.selectbox("Select a PDF to query:", st.session_state.uploaded_files)
-    question = st.text_input("Ask me anything about your selected PDF:")
+    selected_file = st.selectbox("Select a file to query:", st.session_state.uploaded_files)
+    question = st.text_input("Ask me anything about your selected file:")
     top_k = st.number_input("Top K results", value=5, min_value=1, max_value=20, step=1)
 
     def is_hebrew(text):
