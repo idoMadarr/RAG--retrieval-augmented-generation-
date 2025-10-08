@@ -20,7 +20,7 @@ client = OpenAI(api_key=os.getenv("OPEN_AI_KEY"))
 @app.post('/upload_pdf')
 async def upload_pdf(body: dict):
     pdf_path = body.get("pdf_path", None)
-    source_id = os.path.basename(pdf_path)
+    source_id = body.get("source_id", None)
 
     if not pdf_path or not source_id:
         raise HTTPException(status_code=400, detail=f"Invalid request body")
@@ -45,6 +45,10 @@ async def upload_pdf(body: dict):
     QdrantStorage().upsert(ids, vectors, payloads)
 
     result = RAGUpsertResult(ingested=len(chunks))
+
+    # Remove the file from the server after upsert
+    os.remove(pdf_path)
+
     return result.model_dump()
 
 
@@ -52,6 +56,7 @@ async def upload_pdf(body: dict):
 async def query_pdf(body: dict):
     question = body.get("question")
     top_k = int(body.get("top_k", 5))
+    source_id = body.get("source_id", None)
 
     if not question:
         raise HTTPException(status_code=400, detail="Missing 'question' in request body.")
@@ -62,7 +67,7 @@ async def query_pdf(body: dict):
     query_vector = embed_texts([question])[0]
     # after we embed the question, we take the first element in the embed data (for longer questions it can be a bit problematic, but it depends on the embedding model)
 
-    result = QdrantStorage().search(query_vector, top_k)
+    result = QdrantStorage().search(query_vector, top_k, source_id)
     found = RAGSearchResult(contexts=result["contexts"], sources=result["sources"])
 
     if not found.contexts:

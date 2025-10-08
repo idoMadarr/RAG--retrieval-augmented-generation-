@@ -1,5 +1,6 @@
 from qdrant_client import QdrantClient
-from qdrant_client.models import VectorParams, Distance, PointStruct
+from qdrant_client.http.models import FieldCondition, MatchValue
+from qdrant_client.models import VectorParams, Distance, PointStruct, Filter
 
 class QdrantStorage:
     def __init__(self, url="http://localhost:6333/", collection="docs", dim=3072):
@@ -14,8 +15,13 @@ class QdrantStorage:
         self.client.upsert(self.collection, points=points)
 
 
-    def search(self, query_vector, top_k = 5):
-        results = self.client.search(self.collection, query_vector=query_vector, limit=top_k)
+    def search(self, query_vector, top_k = 5, source_id=None):
+        query_filter = None
+
+        if source_id:
+            query_filter = Filter(must=[FieldCondition(key="source", match=MatchValue(value=source_id))])
+
+        results = self.client.search(self.collection, query_vector=query_vector, limit=top_k, query_filter=query_filter)
         # results = [
         #     ScoredPoint(id='d80e027c-b8b7-586c-bb86-8fe8054422a5', version=2, score=0.18, payload={'text': 'chunk1', 'source': 'file.pdf'}),
         #     ScoredPoint(id='b561fc5e-a439-531a-b11e-3ddf2b9935e3', version=2, score=0.22, payload={'text': 'chunk2', 'source': 'file.pdf'}),
